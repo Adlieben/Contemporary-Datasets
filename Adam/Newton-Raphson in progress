@@ -1,0 +1,213 @@
+---
+title: "Rasch-model"
+author: "Merlin"
+date: "2024-10-09"
+output: html_document
+---
+The data simulation
+```{r}
+# Data simulation as provided
+set.seed(123)
+beta_true <- rnorm(50, 0, 1)
+theta_true <- rnorm(1000, 0.5 , 1)
+
+# Probability of correct response for each item
+simdata <- function(beta, theta){
+  p <- matrix(0, nrow = length(theta), ncol = length(beta))
+  answer <- matrix(0, nrow = length(theta), ncol = length(beta))
+  for (i in 1:length(beta)){
+    p[,i] <- exp(theta - beta[i]) / (1 + exp(theta - beta[i]))
+    answer[,i] <- rbinom(length(theta), 1, p[,i])
+  }
+  return(list(p = p, answer = answer))
+}
+
+responses <- simdata(beta_true, theta_true)
+response_matrix <- responses$answer
+```
+
+
+The estimation
+```{r}
+# Required package for matrix operations
+library(MASS)  # For the ginv() function (generalized inverse)
+
+# Define the log-likelihood for all beta values using the sum algorithm
+logLik_rasch <- function(beta, response_matrix) {
+  N <- nrow(response_matrix)  # Number of persons
+  J <- ncol(response_matrix)  # Number of items
+  
+  S_i <- rowSums(response_matrix)  # Total correct responses per person
+  log_likelihood <- 0
+  
+  # Helper function to compute total score probability using the sum algorithm
+  sum_algorithm_prob <- function(betas, score) {
+    results <- matrix(1, nrow = J + 1, ncol = J + 1)
+    bi <- exp(-betas)
+    
+    # Fill the dynamic programming matrix
+    for (i in 1:J) {
+      for (k in 1:J) {
+        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i]
+      }
+    }
+    
+    # Return the probability of getting the observed score
+    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+  }
+  
+  bi <- exp(-beta)  # Compute exp(-beta) for all items
+  
+  # Compute the likelihood for each person using the provided formula
+  for (i in 1:N) {
+    observed_score <- S_i[i]  # Total score for person i
+    prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the score
+    log_likelihood <- log_likelihood + sum(response_matrix[i, ] * log(bi)) - log(prob_score)
+  }
+  
+  return(log_likelihood)  # Return the log-likelihood
+}
+
+# Define the gradient (first derivative) of the log-likelihood using the sum algorithm
+grad_rasch <- function(beta, response_matrix) {
+  N <- nrow(response_matrix)
+  J <- ncol(response_matrix)
+  
+  S_i <- rowSums(response_matrix)  # Total correct responses per person
+  gradient <- numeric(J)
+  
+  bi <- exp(-beta)  # Compute exp(-beta) for all items
+  
+  # Helper function to compute total score probability using the sum algorithm
+  sum_algorithm_prob <- function(betas, score) {
+    results <- matrix(1, nrow = J + 1, ncol = J + 1)
+    bi <- exp(-betas)
+    
+    for (i in 1:J) {
+      for (k in 1:J) {
+        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i]
+      }
+    }
+    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+  }
+  
+  # Compute the gradient for each beta_j
+  for (j in 1:J) {
+    grad_sum <- 0
+    for (i in 1:N) {
+      observed_score <- S_i[i]  # Total score for person i
+      prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the total score
+      grad_sum <- grad_sum + (response_matrix[i, j] - bi[j]) / prob_score  # Adjust with sum algorithm
+    }
+    gradient[j] <- grad_sum
+  }
+  
+  return(gradient)  # Return the gradient
+}
+
+# Define the Hessian (second derivative) for the Newton-Raphson update, using sum algorithm
+hessian_rasch <- function(beta, response_matrix) {
+  N <- nrow(response_matrix)
+  J <- ncol(response_matrix)
+  
+  S_i <- rowSums(response_matrix)  # Total correct responses per person
+  hessian <- matrix(0, J, J)  # Initialize Hessian matrix
+  
+  bi <- exp(-beta)  # Compute exp(-beta) for all items
+  
+  # Helper function to compute total score probability using the sum algorithm
+  sum_algorithm_prob <- function(betas, score) {
+    results <- matrix(1, nrow = J + 1, ncol = J + 1)
+    bi <- exp(-betas)
+    
+    for (i in 1:J) {
+      for (k in 1:J) {
+        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i]
+      }
+    }
+    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+  }
+  
+  # Compute the Hessian for each beta_j and beta_k (cross-terms)
+  for (j in 1:J) {
+    for (k in 1:J) {
+      hess_sum <- 0
+      for (i in 1:N) {
+        observed_score <- S_i[i]  # Total score for person i
+        prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the total score
+        
+        if (j == k) {
+          # Diagonal Hessian (second derivative with respect to the same beta_j)
+          hess_sum <- hess_sum - bi[j] * (1 - bi[j]) / (prob_score^2)
+        } else {
+          # Off-diagonal Hessian (cross-term between beta_j and beta_k)
+          hess_sum <- hess_sum - (bi[j] * bi[k]) / (prob_score^2)
+        }
+      }
+      hessian[j, k] <- hess_sum
+    }
+  }
+  
+  return(hessian)  # Return the Hessian matrix
+}
+
+# Multivariate Newton-Raphson implementation
+multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 100) {
+  beta <- beta_init
+  for (iter in 1:max_iter) {
+    gradient <- grad_rasch(beta, response_matrix)
+    hessian <- hessian_rasch(beta, response_matrix)
+    
+    # Update rule: beta_new = beta_old - H_inv * grad
+    beta_new <- beta - ginv(hessian) %*% gradient
+    
+    # Check for convergence
+    if (max(abs(beta_new - beta)) < tol) {
+      cat("Converged after", iter, "iterations\n")
+      return(beta_new)
+    }
+    
+    # Update beta
+    beta <- beta_new
+  }
+  
+  cat("Did not converge within the maximum number of iterations\n")
+  return(beta)
+}
+
+# Initial guess for beta
+beta_init <- rep(0, ncol(response_matrix))
+
+# Run the multivariate Newton-Raphson algorithm
+beta_estimated <- multivariate_newton_raphson(beta_init, response_matrix)
+
+# Print the final estimated beta values
+print(beta_estimated)
+
+# Compare the estimated beta with the true beta
+comparison <- data.frame(
+  Item = 1:length(beta_true),
+  True_Beta = beta_true,
+  Estimated_Beta = beta_estimated
+)
+
+# Display the comparison
+print(comparison)
+```
+
+The estimation
+```{r}
+# Run the estimation function
+beta_estimated <- est(response_matrix)
+
+# Compare estimated beta with true beta
+comparison <- data.frame(
+  Item = 1:length(beta_true),
+  True_Beta = beta_true,
+  Estimated_Beta = beta_estimated
+)
+
+# Display the comparison
+print(comparison)
+```
+
