@@ -8,8 +8,8 @@ The data simulation
 ```{r}
 # Data simulation as provided
 set.seed(123)
-beta_true <- rnorm(50, 0, 1) # True item difficulty 
-theta_true <- rnorm(1000, 0.5 , 1) #True latent trait 
+beta_true <- rnorm(10, 0, 1) # True item difficulty 
+theta_true <- rnorm(100, 0.5 , 1) #True latent trait 
 
 # Probability of correct response for each item
 simdata <- function(beta, theta){ # Insert the beta and theta values you have
@@ -89,15 +89,15 @@ grad_rasch <- function(beta, response_matrix) {
   
   # Helper function to compute total score probability using the sum algorithm (SAME AS BEFORE)
   sum_algorithm_prob <- function(betas, score) {
-    results <- matrix(1, nrow = J + 1, ncol = J + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
+    results <- matrix(1, nrow = length(betas) + 1, ncol = length(betas) + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
     bi <- exp(-betas) #set b_i as exp(-Beta_i) for higher understandability 
     
-    for (i in 1:J) {
-      for (k in 1:J) {
+    for (i in 1:length(betas)) {
+      for (k in 1:length(betas)) {
         results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
       }
     }
-    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+    return(results[score + 1, length(betas) + 1])  # +1 to account for the possibility of 0 score
   }
   
   # Compute the gradient for each beta_j
@@ -106,7 +106,9 @@ grad_rasch <- function(beta, response_matrix) {
     for (i in 1:N) {
       observed_score <- S_i[i]  # Total score for person i
       prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the total score
-      grad_sum <- grad_sum + (response_matrix[i, j] - bi[j]) / prob_score  # Adjust with sum algorithm
+      beta_without_j <- beta[-j] # Remove current beta for the derivative following beta
+      prev_prob <- sum_algorithm_prob(beta_without_j, observed_score-1)
+      grad_sum <- grad_sum + (response_matrix[i, j]/bi[j]) - prev_prob/prob_score  # Adjust with sum algorithm
     }
     gradient[j] <- grad_sum
   }
@@ -124,19 +126,19 @@ hessian_rasch <- function(beta, response_matrix) {
   S_i <- rowSums(response_matrix) # Total correct responses per person
   hessian <- matrix(0, J, J)  # Initialize Hessian matrix
   
-  bi <- exp(-beta)# Compute exp(-beta) for all items
+  bi <- exp(-beta) # Compute exp(-beta) for all items
   
   # Helper function to compute total score probability using the sum algorithm (SAME AS BEFORE)
   sum_algorithm_prob <- function(betas, score) {
-    results <- matrix(1, nrow = J + 1, ncol = J + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
+    results <- matrix(1, nrow = length(betas) + 1, ncol = length(betas) + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
     bi <- exp(-betas) #set b_i as exp(-Beta_i) for higher understandability 
     
-    for (i in 1:J) {
-      for (k in 1:J) {
+    for (i in 1:length(betas)) {
+      for (k in 1:length(betas)) {
         results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
       }
     }
-    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+    return(results[score + 1, length(betas) + 1])  # +1 to account for the possibility of 0 score
   }
   
   # Compute the Hessian for each beta_j and beta_k (cross-terms)
@@ -146,14 +148,26 @@ hessian_rasch <- function(beta, response_matrix) {
       for (i in 1:N) {
         observed_score <- S_i[i]  # Total score for person i
         prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the total score
-        
         if (j == k) {
           # Diagonal Hessian (second derivative with respect to the same beta_j)
-          hess_sum <- hess_sum - bi[j] * (1 - bi[j]) / (prob_score^2)
+          beta_without_j <- beta[-j] # Remove current beta j = k for the derivative following beta j = k
+          prev_prob <- sum_algorithm_prob(beta_without_j, observed_score-1) 
+          hess_sum <- hess_sum  - (response_matrix[i, j]/(bi[j])^2) + (prev_prob/prob_score)^2
         } else {
           # Off-diagonal Hessian (cross-term between beta_j and beta_k)
-          hess_sum <- hess_sum - (bi[j] * bi[k]) / (prob_score^2)
+          beta_without_j <- beta[-j] # Remove current beta j for the derivative following beta k
+          prev_prob_j <- sum_algorithm_prob(beta_without_j, observed_score-1)
+          beta_without_k <- beta[-k] # Remove current beta k for the derivative following beta k
+          prev_prob_k <- sum_algorithm_prob(beta_without_k, observed_score-1) 
+          beta_without_j_k <- beta[-c(j,k)] # Remove current betas j an k for the derivative following beta k
+          prev_prob_j_k <- sum_algorithm_prob(beta_without_j_k, observed_score-2)
+          if (observed_score > 2){ # If the total score is 1 then it is not possible to get both item j and k right
+            hess_sum <- hess_sum - prev_prob_j_k/prob_score + (prev_prob_j*prev_prob_k)/prev_prob_j_k^2
+          } else {
+            hess_sum <- hess_sum
+          }
         }
+        # print(hess_sum)
       }
       hessian[j, k] <- hess_sum
     }
@@ -168,6 +182,7 @@ hessian_rasch <- function(beta, response_matrix) {
 multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 100) {
   beta <- beta_init
   for (iter in 1:max_iter) {
+    print(iter) # To track progress
     gradient <- grad_rasch(beta, response_matrix)
     hessian <- hessian_rasch(beta, response_matrix)
     
@@ -224,3 +239,31 @@ comparison <- data.frame(
 print(comparison)
 ```
 
+Compare with in-built function
+
+```{r}
+library(VGAMextra)
+
+# Wrapper function that ensures response_matrix is passed
+logLik_rasch_wrapper <- function(beta) {
+  return(logLik_rasch(beta, response_matrix))
+}
+
+grad_rasch_wrapper <- function(beta) {
+  return(grad_rasch(beta, response_matrix))
+}
+
+# Now call newtonRaphson.basic using these wrapper functions
+a <- rep(-10, ncol(response_matrix))  # Initial guess for beta
+b <- rep(10, ncol(response_matrix))  # Initial guess for beta
+
+result <- newtonRaphson.basic(
+  f = logLik_rasch_wrapper,   # Objective function
+  fprime = grad_rasch_wrapper,  # Gradient function
+  a = a,  # Starting point (initial beta)
+  b = b,
+  tol = 1e-6,  # Tolerance for convergence
+  n.Seq = 20,  # Optional: step sequence
+  nmax = 100  # Maximum number of iterations
+)
+```
