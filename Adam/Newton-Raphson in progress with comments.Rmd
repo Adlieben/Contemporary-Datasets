@@ -39,6 +39,20 @@ The estimation
 # Required package for matrix operations
 library(MASS)  # For the ginv() function (generalized inverse)
 
+# Define the sum algorithm for the Rasch model
+sum_algorithm_prob <- function(beta, score) {
+  results <- matrix(0, nrow = length(beta) + 1, ncol = length(beta) + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
+  results[1, ] <- 1 # set values in the first row to 1
+  bi <- exp(-beta) # set b_i as exp(-Beta_i)
+  
+  for (i in 1:length(beta)) {
+    for (k in 1:length(beta)) {
+      results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
+    }
+  }
+  return(results[score + 1, length(beta) + 1])  # +1 to account for the possibility of 0 score
+}
+
 # Define the log-likelihood for all beta values using the sum algorithm
 logLik_rasch <- function(beta, response_matrix) {
   N <- nrow(response_matrix)  # Number of persons
@@ -46,24 +60,6 @@ logLik_rasch <- function(beta, response_matrix) {
   
   S_i <- rowSums(response_matrix)  # Total correct responses per person
   log_likelihood <- 0 # attribute a log likelihood of 0 for now
-  
-  # Helper function to compute total score probability using the sum algorithm
-  sum_algorithm_prob <- function(beta, score) {
-    results <- matrix(1, nrow = J + 1, ncol = J + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
-    bi <- exp(-beta) # set b_i as exp(-Beta_i) for higher understandability 
-    
-    # Fill the dynamic programming matrix
-    for (i in 1:J) {
-      for (k in 1:J) {
-        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
-      }
-    }
-    
-    # Return the probability of getting the observed score
-    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
-  }
-  
-  bi <- exp(-beta)  # Compute exp(-beta) for all items
   
   # Compute the likelihood for each person
   for (i in 1:N) {
@@ -86,19 +82,6 @@ grad_rasch <- function(beta, response_matrix) {
   gradient <- numeric(J) # create vector of 0s of length J 
   
   bi <- exp(-beta)  # Compute exp(-beta) for all items
-  
-  # Helper function to compute total score probability using the sum algorithm (SAME AS BEFORE)
-  sum_algorithm_prob <- function(beta, score) {
-    results <- matrix(1, nrow = length(beta) + 1, ncol = length(beta) + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
-    bi <- exp(-beta) # set b_i as exp(-Beta_i)
-    
-    for (i in 1:length(beta)) {
-      for (k in 1:length(beta)) {
-        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
-      }
-    }
-    return(results[score + 1, length(beta) + 1])  # +1 to account for the possibility of 0 score
-  }
   
   # Compute the gradient for each beta_j
   for (j in 1:J) {
@@ -133,19 +116,6 @@ hessian_rasch <- function(beta, response_matrix) {
   hessian <- matrix(0, J, J)  # Initialize Hessian matrix
   
   bi <- exp(-beta) # Compute exp(-beta) for all items
-  
-  # Helper function to compute total score probability using the sum algorithm (SAME AS BEFORE)
-  sum_algorithm_prob <- function(beta, score) {
-    results <- matrix(1, nrow = length(beta) + 1, ncol = length(beta) + 1) # make a results matrix filled with ones with J+1 columns and rows, where J is the number of items. 
-    bi <- exp(-beta) # set b_i as exp(-Beta_i)
-    
-    for (i in 1:length(beta)) {
-      for (k in 1:length(beta)) {
-        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i] # fill in the results matrix with the actual results. 
-      }
-    }
-    return(results[score + 1, length(beta) + 1])  # +1 to account for the possibility of 0 score
-  }
   
   # Compute the Hessian for each beta_j and beta_k (cross-terms)
   for (j in 1:J) {

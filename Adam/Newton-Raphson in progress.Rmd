@@ -195,6 +195,56 @@ comparison <- data.frame(
 print(comparison)
 ```
 
+```{r}
+hessian_rasch <- function(beta, response_matrix) {
+  N <- nrow(response_matrix)  # Number of persons
+  J <- ncol(response_matrix)  # Number of items
+
+  S_i <- rowSums(response_matrix)  # Total correct responses per person
+  hessian <- matrix(0, J, J)  # Initialize Hessian matrix
+
+  bi <- exp(-beta)  # Compute exp(-beta) for all items
+
+  # Helper function to compute total score probability using the sum algorithm
+  sum_algorithm_prob <- function(betas, score) {
+    results <- matrix(1, nrow = J + 1, ncol = J + 1)
+    bi <- exp(-betas)
+
+    for (i in 1:J) {
+      for (k in 1:J) {
+        results[k + 1, i + 1] <- bi[i] * results[k, i] + results[k + 1, i]
+      }
+    }
+    return(results[score + 1, J + 1])  # +1 to account for the possibility of 0 score
+  }
+
+  # Compute the Hessian for each pair of beta_j, beta_k
+  for (j in 1:J) {
+    for (k in j:J) {  # Iterate over j and k (note: k >= j for symmetry)
+      hess_sum <- 0
+      for (i in 1:N) {
+        observed_score <- S_i[i]  # Total score for person i
+        prob_score <- sum_algorithm_prob(beta, observed_score)  # Probability of the total score
+        
+        if (j == k) {
+          # Diagonal elements
+          hess_sum <- hess_sum - (bi[j]^2 / prob_score^2)
+        } else {
+          # Off-diagonal elements
+          hess_sum <- hess_sum - (bi[j] * bi[k] / prob_score^2)
+        }
+      }
+      hessian[j, k] <- hess_sum
+      hessian[k, j] <- hess_sum  # Symmetry in the Hessian matrix
+    }
+  }
+
+  return(hessian)  # Return the Hessian matrix
+}
+
+```
+
+
 The estimation
 ```{r}
 # Run the estimation function
