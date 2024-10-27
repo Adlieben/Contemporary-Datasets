@@ -10,10 +10,12 @@ The data simulation
 set.seed(124) # for reproducibility
 num_items <- 3 # number of items
 beta_true <- runif(num_items, -2, 2) # uniformly distributed item difficulties around 0 logits
+beta_true <- scale(beta_true, scale = F) # Center the betas because they are relative
 
 # Step 2: Define Person Parameters
 num_persons <- 1000 # sample size
 person_ability <- rnorm(num_persons, -1, 1) # normally distributed person abilities with mean 0 and SD 1
+person_ability <- scale(person_ability, scale = F) # Center the thetas because they are relative
 
 # Step 4: Simulate Responses
 # Create an empty response matrix to store responses for each person-item pair
@@ -157,8 +159,11 @@ hessian_rasch <- function(beta, response_matrix) {
 # ------------------------------------------------------------------------------
 
 # Multivariate Newton-Raphson implementation
-multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 1000) {
+multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 1000, save_iterations = FALSE) {
   beta <- beta_init
+  J <- length(beta_init)  # Number of items
+  beta_history <- matrix(NA, nrow = max_iter, ncol = J)  # Initialize beta history matrix
+  
   for (iter in 1:max_iter) {
     print(iter) # To track progress
     gradient <- grad_rasch(beta, response_matrix)
@@ -168,10 +173,19 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
     beta_new <- beta - ginv(hessian) %*% gradient # Use gradient and hessian derived with respect to beta
     print(max(abs(beta_new - beta)))  # Check the max change for convergence
     
+    # Save the current beta values if save_iterations is TRUE
+    if (save_iterations) {
+      beta_history[iter, ] <- beta  # Store the current beta in the matrix
+    }
+    
     # Check for convergence
     if (max(abs(beta_new - beta)) < tol) {
       cat("Converged after", iter, "iterations\n")
-      return(beta_new)
+      # Trim the beta_history matrix to the actual number of iterations
+      if (save_iterations) {
+        beta_history <- beta_history[1:iter, ]
+      }
+      return(list(beta = beta_new, beta_history = beta_history))
     }
     
     # Update beta
@@ -179,17 +193,17 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
   }
   
   cat("Did not converge within the maximum number of iterations\n")
-  return(beta)
+  return(list(beta = beta, beta_history = beta_history))
 }
 
 # Initial guess for beta
-beta_init <- rnorm(ncol(response_matrix), 0, 0.5) # Start with initial beta values of 1 for each item
-beta_init <- c(-0.6, -0.6, -0.6)
+beta_init <- rep(0, ncol(response_matrix))
 
 # Run the multivariate Newton-Raphson algorithm
-beta_estimated <- multivariate_newton_raphson(beta_init, response_matrix)
+beta_output <- multivariate_newton_raphson(beta_init, response_matrix, save_iterations = TRUE)
 
 # Print the final estimated beta values
+beta_estimated <- beta_output$beta
 print(beta_estimated)
 
 # Compare the estimated beta with the true beta
@@ -211,3 +225,30 @@ rasch_model <- rasch(response_matrix)
 beta_estimates_ltm <- coef(rasch_model)
 beta_estimates_ltm
 ```
+
+Graph that shows convergence:
+
+```{r}
+library(ggplot2) # For plotting
+library(reshape2) # For melt
+
+# Since we already saved the beta history, we can plot it:
+beta_history <- beta_output$beta_history
+
+# Convert beta_history to a data frame for plotting
+beta_history_df <- as.data.frame(beta_history)
+beta_history_df$Iteration <- 1:nrow(beta_history_df)
+beta_history_long <- reshape2::melt(beta_history_df, id.vars = "Iteration", variable.name = "Item", value.name = "Beta")
+
+# Rename the Item variable for clearer legend labels
+beta_history_long$Item <- factor(beta_history_long$Item, labels = paste0("Item ", 1:ncol(beta_history)))
+
+# Plot convergence of each beta value with customized legend labels
+ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
+  geom_line() +
+  labs(title = "Convergence of beta values across iterations", x = "Iteration", y = "Beta Estimate", color = "Item") +
+  theme_minimal()
+```
+
+
+
