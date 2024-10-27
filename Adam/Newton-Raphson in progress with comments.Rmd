@@ -6,30 +6,35 @@ output: html_document
 ---
 The data simulation
 ```{r}
-# Data simulation as provided
-set.seed(123)
-beta_true <- rnorm(3, 0, 1) # True item difficulty 
-theta_true <- rnorm(1000, 0.5 , 1) #True latent trait 
+# Step 1: Define Item Parameters
+set.seed(124) # for reproducibility
+num_items <- 3 # number of items
+beta_true <- runif(num_items, -2, 2) # uniformly distributed item difficulties around 0 logits
 
-# Probability of correct response for each item
-simdata <- function(beta, theta){ # Insert the beta and theta values you have
-  
-  p <- matrix(0, nrow = length(theta), ncol = length(beta)) # setup matrix
-  answer <- matrix(0, nrow = length(theta), ncol = length(beta)) # setup matrix
-  
-  for (i in 1:length(beta)){ #repeat for every beta_i
+# Step 2: Define Person Parameters
+num_persons <- 1000 # sample size
+person_ability <- rnorm(num_persons, -1, 1) # normally distributed person abilities with mean 0 and SD 1
+
+# Step 4: Simulate Responses
+# Create an empty response matrix to store responses for each person-item pair
+response_matrix <- matrix(0, nrow = num_persons, ncol = num_items)
+
+for (i in 1:num_persons) {
+  for (j in 1:num_items) {
+    # Step 4A: Generate a random number U from uniform [0,1]
+    U <- runif(1)
     
-    p[,i] <- exp(theta - beta[i]) / (1 + exp(theta - beta[i])) # Probability of correct answer
-    answer[,i] <- rbinom(length(theta), 1, p[,i]) # 0s and 1s whether the answer was correct 
-  
+    # Step 4B: Compute probability of failure
+    prob_failure <- 1 / (1 + exp(person_ability[i] - beta_true[j]))
+    
+    # Step 4C: Check if U > Probability of failure
+    if (U > prob_failure) {
+      response_matrix[i, j] <- 1 # Correct response
+    } else {
+      response_matrix[i, j] <- 0 # Incorrect response
+    }
   }
-  
-  return(list(p = p, answer = answer)) # Give a list including the probability matrix and the answer (0, 1) matrix
-  
 }
-
-responses <- simdata(beta_true, theta_true) # run function for our given true item difficulty and latent trait, store it in responses
-response_matrix <- responses$answer # store only the answers (0, 1) in response matrix 
 ```
 
 
@@ -178,32 +183,16 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
 }
 
 # Initial guess for beta
-beta_init <- rep(1, ncol(response_matrix)) # Start with initial beta values of 1 for each item
+beta_init <- rnorm(ncol(response_matrix), 0, 0.5) # Start with initial beta values of 1 for each item
+beta_init <- c(-0.6, -0.6, -0.6)
 
 # Run the multivariate Newton-Raphson algorithm
 beta_estimated <- multivariate_newton_raphson(beta_init, response_matrix)
-scale_beta <- scale(beta_estimated) # This yields better results
 
 # Print the final estimated beta values
 print(beta_estimated)
 
 # Compare the estimated beta with the true beta
-comparison <- data.frame(
-  Item = 1:length(beta_true),
-  True_Beta = beta_true,
-  Estimated_Beta = scale_beta
-)
-
-# Display the comparison
-print(comparison)
-```
-
-The estimation
-```{r}
-# Run the estimation function
-beta_estimated <- est(response_matrix)
-
-# Compare estimated beta with true beta
 comparison <- data.frame(
   Item = 1:length(beta_true),
   True_Beta = beta_true,
@@ -214,31 +203,11 @@ comparison <- data.frame(
 print(comparison)
 ```
 
-Compare with in-built function
+The comparison with the rasch model
 
 ```{r}
-library(VGAMextra)
-
-# Wrapper function that ensures response_matrix is passed
-logLik_rasch_wrapper <- function(beta) {
-  return(logLik_rasch(beta, response_matrix))
-}
-
-grad_rasch_wrapper <- function(beta) {
-  return(grad_rasch(beta, response_matrix))
-}
-
-# Now call newtonRaphson.basic using these wrapper functions
-a <- rep(-10, ncol(response_matrix))  # Initial guess for beta
-b <- rep(10, ncol(response_matrix))  # Initial guess for beta
-
-result <- newtonRaphson.basic(
-  f = logLik_rasch_wrapper,   # Objective function
-  fprime = grad_rasch_wrapper,  # Gradient function
-  a = a,  # Starting point (initial beta)
-  b = b,
-  tol = 1e-6,  # Tolerance for convergence
-  n.Seq = 20,  # Optional: step sequence
-  nmax = 100  # Maximum number of iterations
-)
+library(ltm)
+rasch_model <- rasch(response_matrix)
+beta_estimates_ltm <- coef(rasch_model)
+beta_estimates_ltm
 ```
