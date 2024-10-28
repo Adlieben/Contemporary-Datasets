@@ -1,11 +1,15 @@
 ---
 title: "Rasch-model"
-author: "Merlin"
+author: "Adam Maghout, Jasmijn Bazen, Jonathan Koop and Merlin Urbanski"
 date: "2024-10-09"
 output:
   html_document: default
   pdf_document: default
 ---
+
+# Introduction and outline
+
+The aim of the project is to estimate the item parameters of a Rasch model without making assumptions concerning the person parameters. In order to achieve this, we first generate data for which the true item parameters are known then construct a function to re-estimate these parameters using a Newton-Raphson algorithm. Checks are performed along the way to ensure that the data generation is performed correctly and that the constructed algorithm produces stable estimates that correspond to the desired item parameters. These are compared to the original values and benchmarked against the values produced by the rasch() function in the ltm package to demonstrate that the algorithm is functioning properly. Finally, data is generated for varying number of items, number of respondents and methods of generation to investigate the function's overall performance. This is measured using mean averag error (MAE).
 
 # Load Packages
 
@@ -14,7 +18,9 @@ output:
 library(MASS)  # For the ginv() function (generalized inverse)
 ```
 
-# The data simulation
+# Data 
+
+## Function for Generating Data
 
 ```{r}
 generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
@@ -55,7 +61,7 @@ generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
 }
 ```
 
-## Generate Example Data
+## Generating Example Data
 ```{r}
 # Generate example data with 5 items and 1000 persons
 result <- generate_irt_data(num_items = 5, num_persons = 1000)
@@ -65,6 +71,9 @@ beta_true <- result$beta_true
 ```
 
 # The Estimation
+
+### Rationale
+
 
 ### Sum Algorithm for the Rasch Model
 
@@ -147,6 +156,7 @@ grad_rasch <- function(beta, response_matrix) {
 * **Calculate Off-Diagonal Elements**
 * **Update Hessian Matrix**
 * **Return Hessian Matrix**
+
 ```{r}
 # Define the Hessian (second derivative) for the Newton-Raphson update using the sum algorithm
 hessian_rasch <- function(beta, response_matrix) {
@@ -201,6 +211,7 @@ hessian_rasch <- function(beta, response_matrix) {
 * **Update Beta**
 * **Check for Convergence**
 * **Return Estimated Beta Values**
+
 ```{r}
 # Multivariate Newton-Raphson implementation
 multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 1000, save_iterations = FALSE) {
@@ -301,11 +312,7 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
   theme_minimal()
 ```
 
-# Evaluation of the Correctness of the Generated Data
-
-
-
-# Evaluation of the Functions Correctness
+# Evaluation of the Function's Correctness
 
 In order to evaluate, whether the function correctly estimates the item parameters, we can compare the estimated item parameters with the true item parameters in various scenarios, letting the number of items and persons, as well as the item difficulties and their distribution vary. The following table presents the conditions under which the functions were evaluated:
 
@@ -461,6 +468,6 @@ for (i in seq_along(item_difficulty_distributions)) {
 }
 ```
 
-As can be seen in the plots, both the implemented and the `ltm` functions perform similarly in estimating the item parameters. The Mean Absolute Error (MAE) between the true and estimated item parameters is generally low with normal and exponentially distributed true item parameters. In the cases of these distributions, the MAEs are generally around 0.05 implying that the estimates on average only deviate by 0.05 from the true values. This indicates that the implemented functions quite reliable for estimating item parameters in the Rasch model given exponentially or normally distributed parameters.
-In the case of uniformly distributed true item parameters, the MAEs are generally higher, with values going up to 0.223 in the implemented function and even 0.332 for the `rasch` function in the `ltm` page. This indicates that the implemented functions are less reliable for estimating item parameters in the Rasch model given uniformly distributed parameters.
+As can be seen in the plots, both the implemented and the `ltm` functions perform similarly in estimating the item parameters. The Mean Absolute Error (MAE) between the true and estimated item parameters is generally low with normal and exponentially distributed true item parameters. In the cases of these distributions, the MAEs are generally around 0.05 implying that the estimates on average only deviate by 0.05 from the true values. This indicates that the implemented functions are quite reliable for estimating item parameters in the Rasch model given exponentially or normally distributed parameters.
+In the case of uniformly distributed true item parameters, the MAEs are generally higher, with values going up to 0.223 in the implemented function and even 0.332 for the `rasch` function in the `ltm` page. This indicates that the implemented and built-in functions are less reliable for estimating item parameters in the Rasch model given uniformly distributed parameters.
 
