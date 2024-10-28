@@ -27,6 +27,8 @@ library(reshape2) # For matrix operations
 
 ## Function for Generating Data
 
+For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation.
+
 ```{r}
 generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
   
@@ -78,6 +80,12 @@ beta_true <- result$beta_true
 # The Estimation
 
 ### Rationale
+
+The probability of a person $p$ getting $X$ points on an item $i$, where $X = 0,1$, under a Rasch model is given by:  
+
+....
+
+Where $\theta_p$ is the ability of the person and $\beta_i$ is the difficulty of the item. Here, we are interested in estimating $\beta_i$ for $n$ number of items such that $i = 1,2,...,n$. Given a set of observed data, such as the generated dataset above, this is equivalent to 
 
 
 ### Sum Algorithm for the Rasch Model
