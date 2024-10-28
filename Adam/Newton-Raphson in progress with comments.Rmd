@@ -81,12 +81,49 @@ beta_true <- result$beta_true
 
 ### Rationale
 
-The probability of a person $p$ getting $X$ points on an item $i$, where $X = 0,1$, under a Rasch model is given by:  
+The probability of observing a pattern $x$ of $n$ responses for a person $p$ under a Rasch model is:
 
-....
+\begin{equation}
+P(X = x | \theta_p, \beta_i) = \prod_{i=1}^n \frac{\exp(x_i (\theta_p - \beta_i))}{1 + \exp(\theta_p - \beta_i)}
+\end{equation}
 
-Where $\theta_p$ is the ability of the person and $\beta_i$ is the difficulty of the item. Here, we are interested in estimating $\beta_i$ for $n$ number of items such that $i = 1,2,...,n$. Given a set of observed data, such as the generated dataset above, this is equivalent to 
+Where $\theta_p$ is the ability of the person and $\beta_i$ is the difficulty of the item $i$ with $i$ ranging from 1 to n. Here, we are interested in estimating the item locatio parameters $\beta_i$. Given an observed score pattern $x$, this entails finding values for the item parameters that are most likely to have produced the pattern. In other words, we want to maximise the likelihood of the $\beta_i$ given $x$. To this goal, we transform equation (1) to represent the probability of a total score $x^+$ being equal to a value $r$. This is simply the sum of all possible combinations of $x_i$ that lead to $x^+=r$, that is:
 
+\begin{equation}
+\begin{split}
+P(x^+ = r | \theta, \beta) & = \sum_{x\rightarrow r} \prod_{i=1}^n \frac{\exp(x_i (\theta_p - \beta_i))}{1 + \exp(\theta_p - \beta_i)} \\~\\
+& = \sum_{x\rightarrow r} \frac{\prod_{i=1}^n \exp(\theta_p x_i) \prod_{i=1}^n \exp(-\beta_ix_i)}{\prod_{i=1}^n 1 + \exp(\theta_p - \beta_i)} \\~\\
+& = \frac{\exp(\theta_pr)}{\prod_{i=1}^n 1 + \exp(\theta_p - \beta_i)}\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))
+\end{split}
+\end{equation}
+
+The last transformation reveals the utility of first finding an expression of the probability of a total score before computing the desired likelihood: we now have two parts, one that depends on the item difficulties, the other on person abilities. Since the person abilities are assumed in this problem to be unknown because we are simply observing a random sample, finding an expression of the likelihood of the item parameters that is independent of them is important. On the other hand, $r$ is known for our score pattern since it is just the sum of the $x_i$ (indeed this property is even used for one of the steps) so it will be more useful to work with. To evaluate $\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))$, we observe that it is equal to the likelihood of each final score $r$, that we can notate $y_r$. Furthermore, for each item $i$, given that $x_i$ can be either 0 or 1, we find that $y_r = \exp(-\beta_i * 0)y_r^{\setminus i} + \exp(-\beta_i * 1)y_{r-1}^{\setminus i} = y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}$, where $\setminus i$ indicates the observation $i$ is left out of the calculation. This is trivial as the sum $r$ can be reached both if item $i$ is answered correctly or not.  
+
+Once this has been established, it can be noted via conditional probability that:
+
+\begin{equation}
+\begin{split}
+P(x^+ = r | \theta_p, \beta_i) & = \frac{\exp(\theta_p r)}{\prod \left(\exp(\theta_p - \beta_i) + 1\right)} * y_{x^+} \\~\\
+P(x^+ = r, X_i = 1 | \theta_p, \beta_i) & = \frac{\exp(\theta_p r)}{\prod \exp(\theta_p - \beta_i) + 1}\exp(-\beta_i)y_{r-1}^{\setminus i} \\~\\
+P(x^+ = r, X_i = 0 | \theta_p, \beta_i) & = \frac{\exp(\theta_p r)}{\prod \exp(\theta_p - \beta_i) + 1}y_r^{\setminus i} \\~\\
+\Leftrightarrow P(x_i = 1 | \theta_p, \beta_i, x^+) & = \frac{P(x^+ = r, X_i = 1 | \theta_p, \beta_i)}{P(x^+ = r | \theta_p, \beta_i)} = \frac{\exp(-\beta_i)y_{r-1}^{\setminus i}}{y_{x^+}} \\~\\
+P(x_i = 0 | \theta_p, \beta_i, x^+) & = \frac{P(x^+ = r, X_i = 0 | \theta_p, \beta_i)}{P(x^+ = r | \theta_p, \beta_i)} = \frac{y_r^{\setminus i}}{y_{x^+}} = 1
+\end{split}
+\end{equation}
+
+Such that a general form of $P(X = x | \theta_p, \beta_i, x^+)$ is
+
+\begin{equation}
+P(X = x | \theta_p, \beta_i, x^+) = \frac{\prod_{i=1}^n \exp(-\beta_i x_{i})}{y_{r}} = \frac{\prod_{i=1}^n b_i^{xî}}{y_{r}}
+\end{equation}
+
+where $b_i = \exp(-\beta_i)$. By taking this formula across all persons p, this yields the desired likelihood as a function of only the item parameters and observed scores:
+
+\begin{equation}
+L = \prod_{p=1}^s\frac{\prod_{i=1}^n b_i^{x^{pi}}}{y_{x^+p}}
+\end{equation}
+
+for s persons. Equivalently, this can be expressed as a log-likelihood that we seek to maximise:
 
 ### Sum Algorithm for the Rasch Model
 
