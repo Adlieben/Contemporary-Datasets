@@ -14,8 +14,13 @@ The aim of the project is to estimate the item parameters of a Rasch model witho
 # Load Packages
 
 ```{r}
-# Required package for matrix operations
 library(MASS)  # For the ginv() function (generalized inverse)
+library(ltm)   # For rasch() function
+library(ggplot2) # For plotting
+library(reshape2) # For melt 
+library(knitr) # For constructing data
+library(kableExtra) # For constructing data
+library(reshape2) # For matrix operations
 ```
 
 # Data 
@@ -281,7 +286,6 @@ print(comparison)
 The comparison with the rasch model
 
 ```{r}
-library(ltm)
 rasch_model <- rasch(response_matrix)
 beta_estimates_ltm <- coef(rasch_model)
 summary(rasch_model)
@@ -291,9 +295,6 @@ beta_estimates_ltm
 Graph that shows convergence:
 
 ```{r}
-library(ggplot2) # For plotting
-library(reshape2) # For melt
-
 # Since we already saved the beta history, we can plot it:
 beta_history <- beta_output$beta_history
 
@@ -317,8 +318,6 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
 In order to evaluate, whether the function correctly estimates the item parameters, we can compare the estimated item parameters with the true item parameters in various scenarios, letting the number of items and persons, as well as the item difficulties and their distribution vary. The following table presents the conditions under which the functions were evaluated:
 
 ```{r}
-library(knitr)
-library(kableExtra)
 table <- data.frame(matrix(ncol = 1, nrow = 3))
 
 rownames(table) <- c("Number of Persons", "Number of Items", "Item Difficulty Distribution")
@@ -414,11 +413,6 @@ for (i in seq_along(person_conditions)) {
 The Mean Absolute Error (MAE) between the true and estimated item parameters for each scenario is presented dividing the scenarios into three tables, one for each item difficulty distribution:
 
 ```{r}
-# Load necessary libraries
-library(ggplot2)
-library(reshape2)
-
-
 for (i in seq_along(item_difficulty_distributions)) {
   # Convert matrix to data frame and add row and column names
   df <- as.data.frame(MAE_array_own[,,i])
