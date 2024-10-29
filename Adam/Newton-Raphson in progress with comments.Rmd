@@ -13,10 +13,10 @@ The aim of the project is to estimate the item parameters of a Rasch model witho
 
 # Load Packages
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(MASS)  # For the ginv() function (generalized inverse)
 library(ltm)   # For rasch() function
-library(ggplot2) # For plotting
+library(tidyverse) # For plotting
 library(reshape2) # For melt 
 library(knitr) # For constructing data
 library(kableExtra) # For constructing data
@@ -64,18 +64,55 @@ generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
   }
   
   # Return both the response matrix and the true beta values
-  return(list(response_matrix = response_matrix, beta_true = beta_true))
+  return(list(response_matrix = response_matrix, beta_true = beta_true, person_ability = person_ability))
 }
 ```
 
-## Generating Example Data
+## Data Generation
+
 ```{r}
 # Generate example data with 5 items and 1000 persons
 result <- generate_irt_data(num_items = 5, num_persons = 1000)
 
 response_matrix <- result$response_matrix
 beta_true <- result$beta_true
+person_ability <- result$person_ability
 ```
+
+## Checking the Data
+
+We can verify that the data generation process has worked by plotting characteristic curves for each item.
+
+```{r, warning=F, message=F}
+# Create a data frame from response matrix for plotting
+response_df <- as.data.frame(response_matrix)
+colnames(response_df) <- paste0("Item_", 1:ncol(response_df))
+response_df$Ability <- person_ability
+
+# Gather data for ggplot (long format)
+response_long <- response_df %>%
+  tidyr::pivot_longer(cols = starts_with("Item_"),
+                      names_to = "Item",
+                      values_to = "Response")
+
+# Plot the raw responses (0 or 1) with a fitted logistic curve for each item
+p <- ggplot(response_long, aes(x = Ability, y = Response, color = Item)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +  # Fitted logistic curve
+  theme_minimal() +
+  labs(title = paste0("Characteristic curves for items 1-", ncol(response_df)-1),
+       x = "Person Ability",
+       y = "Score (0 = Incorrect, 1 = Correct)")
+
+# Overlay vertical lines for each item's beta
+for (i in 1:length(beta_true)) {
+  p <- p + geom_vline(xintercept = beta_true[i], linetype = "dashed", color = scales::hue_pal()(length(beta_true))[i])
+}
+
+# Display the plot
+print(p)
+```
+
+Here, the item difficulty parameters are represented on the intersection of the x-axis with the vertical lines. It is clear that the probability of answering an item correctly is dictated by the item difficulty parameters so the data generation process has worked. 
 
 # The Estimation
 
@@ -123,10 +160,10 @@ where $b_i = \exp(-\beta_i)$. By taking this formula across all persons p, this 
 L = \prod_{p=1}^s\frac{\prod_{i=1}^n b_i^{x^{pi}}}{y_{x^+p}}
 \end{equation}
 
-for s persons. Equivalently, this can be expressed as a log-likelihood that we seek to maximise:
+for $s$ persons. Equivalently, this can be expressed as a log-likelihood that we seek to maximise:
 
 \begin{equation}
-l = \log L = \sum_{i=1}^n \sum_{p=1}^s \beta_i x_{pi} - \sum_{p} \log({y_{x^+ p}})
+l = \log L = \sum_{i=1}^n \sum_{p=1}^s -\beta_i x_{pi} - \sum_{p} \log({y_{x^+ p}})
 \end{equation}
 
 By noticing that $\frac{\partial y_{x^+ p}}{\partial \beta_i} = \frac{\partial}{\partial \beta_i}(y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}) = -\exp(-\beta_i)y_{r-1}^{\setminus i}$, we can construct the following gradient for the log-likelihood defined above:
@@ -135,7 +172,7 @@ By noticing that $\frac{\partial y_{x^+ p}}{\partial \beta_i} = \frac{\partial}{
 \frac{\partial l}{\partial \beta_i} = - \sum_{p=1}^sx_{pi} + \frac{\exp(-\beta_i)y_{r-1}^{\setminus i}}{y_{x^+ p}}
 \end{equation}
 
-The roots to this equation cannot be found as the sum likelihoods involved are also dependent on $\beta_i$. Thus, the only solution to find the vector of item parameters that maximises the log-likelihood for every item is to try different values, evaluate the log-likelihood and choose the values for which the log-likelihood is highest. Given that the item parameters can take on any value, this is an impossible task computationally unless knowledge is already available concerning plausible values. In absence of this, an alternative is to implement the Newton-Raphson algorithm, which cycles through values that the parameters can take on and eventually converges to values that maximise the log-likelihood. At each step of the algorithm, the new proposed value for the likelihood is given by:
+The roots of this equation cannot be found as the sum likelihoods involved are also dependent on $\beta_i$. Thus, the only solution to find the vector of item parameters that maximises the log-likelihood for every item is to try different values, evaluate the log-likelihood and choose the values for which the log-likelihood is highest. Given that the item parameters can take on any value, this is an impossible task computationally unless knowledge is already available concerning plausible values. In absence of this, an alternative is to implement the Newton-Raphson algorithm, which cycles through values that the parameters can take on and eventually converges to values that maximise the log-likelihood. At each step of the algorithm, the new proposed value for the likelihood is given by:
 
 \begin{equation}
 \beta_{new} = \beta_{old} - l''(\beta_{old})^{-1} l'(\beta_{old})
@@ -145,7 +182,7 @@ where $\beta$ is the vector of item parameters, $l''(\beta)$ is the Hessian matr
 
 \begin{align}
 \frac{\partial^2 l}{\partial \beta_i^2} &= 0 + \frac{\partial l}{\partial \beta_i} \left( \exp(-\beta_i) y_{r-1}^{\setminus i} \right) \frac{1}{y_{x^+ p}} + \exp(-\beta_i) y_{r-1}^{\setminus i} \frac{\partial l}{\partial \beta_i} \left( \frac{1}{y_{x^+ p}} \right) \\[10pt]
-&= - \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} + \left( \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} \right)^2
+&= \frac{-\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} + \left( \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} \right)^2
 \end{align}
 
 For the off-diagonal elements, a similar process is repeated but the resulting expression is different due to $y_{r-1}^{\setminus i}$ being dependent on $\beta_j$ where $j\neq i$:
@@ -155,12 +192,13 @@ For the off-diagonal elements, a similar process is repeated but the resulting e
 &= \frac{-\exp(-\beta_i) \exp(-\beta_j) y_{r-2}^{\setminus i,j}}{y_{x^+ p}} + \frac{\exp(-\beta_i) \exp(-\beta_j) y_{r-1}^{\setminus i}y_{r-1}^{\setminus j}}{y_{x^+ p}^2}
 \end{align}
 
-Given these analytically derived formulas for the gradient and the Hessian, the item parameters can be updated using the Newton-Raphson algorithm. Convergence of the algorithm can be defined after a set number of iterations or 
+Given these analytically derived formulas for the gradient and the Hessian, the item parameters can be updated using the Newton-Raphson algorithm. Convergence of the algorithm can be defined after a set number of iterations or once the change in $\beta$ between one iteration and the next is beneath a specified threshold. Here, both approaches can be combined. Namely, if the change in $\beta$ is negligeable between two iterations, the algorithm will stop but will otherwise continue until it reaches a maximum number of iterations. Both the threshold and maximum number of iterations are arbitrary.
 
-### Sum Algorithm for the Rasch Model
+### Sum Algorithm
 
-* **Initialize Matrix**
-* **Compute Item Difficulty Transformation**
+The sum algorithm is defined recurrently:
+
+* **Initialise Matrix**
 * **Fill Matrix Using Recurrence Relation**
 * **Return Probability of Observed Score**
 
@@ -189,7 +227,15 @@ sum_algorithm_prob <- function(beta, score) {
 ```
 
 ### Gradient for the Rasch Model
-* **Define Inputs**
+
+The formulation of the gradient vector is given in section 4.0.1:
+
+\begin{equation}
+\frac{\partial l}{\partial \beta_i} = - \sum_{p=1}^sx_{pi} + \frac{\exp(-\beta_i)y_{r-1}^{\setminus i}}{y_{x^+ p}}
+\end{equation}
+
+The steps to perform this in a computationally efficient manner are:
+
 * **Initialise Variables**
 * **Calculate Total Scores**
 * **Initialise Gradient Vector**
@@ -231,7 +277,21 @@ grad_rasch <- function(beta, response_matrix) {
 }
 ```
 ### Hessian for the Rasch Model
-* **Define Inputs**
+
+The formulation of the elements of the Hessian matrix is given in section 4.0.1. For the diagonal elements, these can be obtained with:
+
+\begin{equation}
+\frac{\partial^2 l}{\partial \beta_i^2} = \frac{-\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} + \left( \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} \right)^2
+\end{equation}
+
+For the off-diagonal elements, the formula is: 
+
+\begin{equation}
+\frac{\partial^2 l}{\partial \beta_i \partial \beta_j} = \frac{-\exp(-\beta_i) \exp(-\beta_j) y_{r-2}^{\setminus i,j}}{y_{x^+ p}} + \frac{\exp(-\beta_i) \exp(-\beta_j) y_{r-1}^{\setminus i}y_{r-1}^{\setminus j}}{y_{x^+ p}^2}
+\end{equation}
+
+The steps to obtain these elements in a computationally efficient manner are:
+
 * **Initialise Variables**
 * **Initialise Hessian Sum for Item Pairs**
 * **Calculate Diagnonal Elements**
@@ -287,6 +347,8 @@ hessian_rasch <- function(beta, response_matrix) {
 ```
 ### Multivariate Newton-Raphson Algorithm for the Rasch Model
 
+Given the previous functions for the sum algorithm, gradient vector and Hessian matrix, the Newton-Raphson Algorithm is defined as follows:
+
 * **Define Inputs**
 * **Initialise Variables**
 * **Calculate Gradient and Hessian**
@@ -338,6 +400,8 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
 
 ## Application of the Newton-Raphson Algorithm
 
+Initial values for the Newton-algorithm must be defined before using it on the data generated earlier. We choose a vector of zeroes so as to obtain difficulties centered around 0. This is consistent with the data generation process, during which the item difficulties were first centered. An equivalent alternative would be to choose different starting values then center the estimated item difficulties once the algorithm has converged.
+
 ```{r}
 # Initial guess for beta
 beta_init <- rep(0, ncol(response_matrix))
@@ -360,16 +424,17 @@ comparison <- data.frame(
 print(comparison)
 ```
 
-The comparison with the rasch model
+
+The comparison given above indicates that the algorithm is succesful as similar values to those used for the data generation are found. We can also use the rasch function from the ltm package to get item difficulty parameters:
+
 
 ```{r}
 rasch_model <- rasch(response_matrix)
 beta_estimates_ltm <- coef(rasch_model)
-summary(rasch_model)
 beta_estimates_ltm
 ```
 
-Graph that shows convergence:
+Again, there is little difference between our estimated parameters via the rasch function and the true parameters. This also confirms that retrieving the original parameters perfectly is not possible given error in the response matrix. Finally, we can verify that the Newton-Raphson function is converging properly and that the values observed are not due to chance or convergence in a local maximum. This can be done easily as the function already stores the values of $\beta$ at each iteration:
 
 ```{r}
 # Since we already saved the beta history, we can plot it:
@@ -389,6 +454,8 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
   labs(title = "Convergence of beta values across iterations", x = "Iteration", y = "Beta Estimate", color = "Item") +
   theme_minimal()
 ```
+
+Convergence is obvious 
 
 # Evaluation of the Function's Correctness
 
