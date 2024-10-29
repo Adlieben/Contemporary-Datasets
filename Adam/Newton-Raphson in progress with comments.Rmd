@@ -455,7 +455,113 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
   theme_minimal()
 ```
 
-Convergence is clear as the algorithm quickly reaches item difficulties similar to those outputted as results by the function. This also suggests that a smaller tolerance level could be used in this instance, which can be fixed using the 'tol' parameter in the function-
+Convergence is clear as the algorithm quickly reaches item difficulties similar to those outputted as results by the function. This also suggests that a smaller tolerance level could be used in this instance, which can be fixed using the 'tol' parameter in the function.
+
+# Multiple booklets
+
+In some cases, certain participants have taken one version of a test, whilst other participants have taken the other. Both versions of the test may however have items in common. This situation can be represented by removing some of the data from our original data generation:
+
+```{r}
+response_matrix_modif <- response_matrix
+
+# Set the first 500 responses of item 1 to NA
+response_matrix_modif[1:500, 5] <- NA
+
+# Set the last 500 responses of item 5 to NA
+response_matrix_modif[(nrow(response_matrix_modif) - 499):nrow(response_matrix_modif), 1] <- NA
+```
+
+Now the first 500 participants have not taken item 5, whilst the 500 last have not taken item 1. A new version of the Newton-Raphson algorithm can be used, that identifies different booklets and treats them differently:
+
+```{r}
+# Modified Multivariate Newton-Raphson with handling for incomplete data and missing column removal
+multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 1000) {
+  
+  # Helper function to identify common and unique items
+  identify_common_unique <- function(response_matrix) {
+    item_patterns <- colSums(!is.na(response_matrix))  # Count responses for each item
+    common_items <- which(item_patterns == max(item_patterns))  # Items with max responses across booklets
+    unique_items_booklet1 <- which(item_patterns > 0 & item_patterns < max(item_patterns))
+    unique_items_booklet2 <- setdiff(1:ncol(response_matrix), c(common_items, unique_items_booklet1))
+    
+    # Count unique response patterns to determine number of booklets
+    booklet_patterns <- unique(apply(!is.na(response_matrix), 1, paste, collapse = ""))
+    num_booklets <- length(booklet_patterns)
+    
+    list(common = common_items, unique1 = unique_items_booklet1, unique2 = unique_items_booklet2, num_booklets = num_booklets)
+  }
+  
+  # Separate estimation for each booklet with missing column handling
+  estimate_booklet <- function(beta_init, response_matrix, items) {
+    # Filter out columns with all NA values
+    non_na_items <- items[!apply(is.na(response_matrix[, items]), 2, all)]
+    beta <- beta_init[non_na_items]  # Initialize beta for non-NA items only
+    
+    # Newton-Raphson iterations
+    for (iter in 1:max_iter) {
+      gradient <- grad_rasch(beta, response_matrix[, non_na_items])
+      hessian <- hessian_rasch(beta, response_matrix[, non_na_items])
+      beta_new <- beta - ginv(hessian) %*% gradient
+      if (max(abs(beta_new - beta)) < tol) return(beta_new)
+      beta <- beta_new
+    }
+    
+    # Map back to the full beta vector, setting excluded items to NA
+    beta_full <- rep(NA, length(beta_init))
+    beta_full[non_na_items] <- beta
+    beta_full  # Return beta with NA for excluded items
+  }
+  
+  # Identify items in each category
+  item_indices <- identify_common_unique(response_matrix)
+  common_items <- item_indices$common
+  unique1_items <- item_indices$unique1
+  unique2_items <- item_indices$unique2
+  num_booklets <- item_indices$num_booklets  # Number of booklets identified
+  
+  # Estimate parameters for each booklet separately, handling missing columns
+  beta_booklet1 <- estimate_booklet(beta_init, response_matrix, c(common_items, unique1_items))
+  beta_booklet2 <- estimate_booklet(beta_init, response_matrix, c(common_items, unique2_items))
+  
+  # Calculate mean difference for common items, ignoring NAs
+  mean_diff <- mean(beta_booklet1[common_items] - beta_booklet2[common_items], na.rm = TRUE)
+  
+  # Adjust unique items by mean difference
+  beta_adjusted <- beta_init
+  beta_adjusted[unique1_items] <- beta_booklet1[unique1_items] - mean_diff
+  beta_adjusted[unique2_items] <- beta_booklet2[unique2_items] + mean_diff
+  beta_adjusted[common_items] <- (beta_booklet1[common_items] + beta_booklet2[common_items]) / 2  # Average common items
+  
+  # Re-center around 0
+  beta_final <- beta_adjusted - mean(beta_adjusted, na.rm = TRUE)
+  
+  return(list(beta = beta_final, num_booklets = num_booklets))
+}
+```
+
+Applying this algorithm to our truncated data, we obtain:
+
+```{r}
+# Initial guess for beta
+beta_init <- rep(0, ncol(response_matrix))
+
+# Run the multivariate Newton-Raphson algorithm
+beta_output <- multivariate_newton_raphson(beta_init, response_matrix_modif)
+
+# Print the final estimated beta values
+beta_estimated <- beta_output$beta
+print(beta_estimated)
+
+# Compare the estimated beta with the true beta
+comparison <- data.frame(
+  Item = 1:length(beta_true),
+  True_Beta = beta_true,
+  Estimated_Beta = beta_estimated
+)
+
+# Display the comparison
+print(comparison)
+```
 
 # Evaluation of the Function's Correctness
 
