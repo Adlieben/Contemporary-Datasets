@@ -27,7 +27,7 @@ library(reshape2) # For matrix operations
 
 ## Function for Generating Data
 
-For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation.
+For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. For the time being, we assume no missing data, signifying that only booklet is administered and that every person managed to complete every item.
 
 ```{r}
 generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
@@ -455,7 +455,7 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
   theme_minimal()
 ```
 
-Convergence is obvious 
+Convergence is clear as the algorithm quickly reaches item difficulties similar to those outputted as results by the function. This also suggests that a smaller tolerance level could be used in this instance, which can be fixed using the 'tol' parameter in the function-
 
 # Evaluation of the Function's Correctness
 
