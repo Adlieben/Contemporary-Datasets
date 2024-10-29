@@ -97,7 +97,7 @@ P(x^+ = r | \theta, \beta) & = \sum_{x\rightarrow r} \prod_{i=1}^n \frac{\exp(x_
 \end{split}
 \end{equation}
 
-The last transformation reveals the utility of first finding an expression of the probability of a total score before computing the desired likelihood: we now have two parts, one that depends on the item difficulties, the other on person abilities. Since the person abilities are assumed in this problem to be unknown because we are simply observing a random sample, finding an expression of the likelihood of the item parameters that is independent of them is important. On the other hand, $r$ is known for our score pattern since it is just the sum of the $x_i$ (indeed this property is even used for one of the steps) so it will be more useful to work with. To evaluate $\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))$, we observe that it is equal to the likelihood of each final score $r$, that we can notate $y_r$. Furthermore, for each item $i$, given that $x_i$ can be either 0 or 1, we find that $y_r = \exp(-\beta_i * 0)y_r^{\setminus i} + \exp(-\beta_i * 1)y_{r-1}^{\setminus i} = y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}$, where $\setminus i$ indicates the observation $i$ is left out of the calculation. This is trivial as the sum $r$ can be reached both if item $i$ is answered correctly or not.  
+The last transformation reveals the utility of first finding an expression of the probability of a total score before computing the desired likelihood: we now have two parts, one that depends on the item difficulties, the other on person abilities. Since the person abilities are assumed in this problem to be unknown because we are simply observing a random sample, finding an expression of the likelihood of the item parameters that is independent of them is important. On the other hand, $r$ is known for our score pattern since it is just the sum of the $x_i$ (indeed this property is even used for one of the steps) so it will be more useful to work with. To evaluate $\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))$, we observe that it is equal to the likelihood of each final score $r$, that we can notate $y_r$. Furthermore, for each item $i$, given that $x_i$ can be either 0 or 1, we find that $y_r = \exp(-\beta_i * 0)y_r^{\setminus i} + \exp(-\beta_i * 1)y_{r-1}^{\setminus i} = y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}$, where $\setminus i$ indicates the observation $i$ is left out of the calculation. This is trivial as the sum $r$ can be reached both if item $i$ is answered correctly or not. Applying this rule recursively allows us to quickly obtain the likelihood of obtaining each sum $r$. This process will be refered to as the sum algorithm. 
 
 Once this has been established, it can be noted via conditional probability that:
 
@@ -124,6 +124,38 @@ L = \prod_{p=1}^s\frac{\prod_{i=1}^n b_i^{x^{pi}}}{y_{x^+p}}
 \end{equation}
 
 for s persons. Equivalently, this can be expressed as a log-likelihood that we seek to maximise:
+
+\begin{equation}
+l = \log L = \sum_{i=1}^n \sum_{p=1}^s \beta_i x_{pi} - \sum_{p} \log({y_{x^+ p}})
+\end{equation}
+
+By noticing that $\frac{\partial y_{x^+ p}}{\partial \beta_i} = \frac{\partial}{\partial \beta_i}(y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}) = -\exp(-\beta_i)y_{r-1}^{\setminus i}$, we can construct the following gradient for the log-likelihood defined above:
+
+\begin{equation}
+\frac{\partial l}{\partial \beta_i} = - \sum_{p=1}^sx_{pi} + \frac{\exp(-\beta_i)y_{r-1}^{\setminus i}}{y_{x^+ p}}
+\end{equation}
+
+The roots to this equation cannot be found as the sum likelihoods involved are also dependent on $\beta_i$. Thus, the only solution to find the vector of item parameters that maximises the log-likelihood for every item is to try different values, evaluate the log-likelihood and choose the values for which the log-likelihood is highest. Given that the item parameters can take on any value, this is an impossible task computationally unless knowledge is already available concerning plausible values. In absence of this, an alternative is to implement the Newton-Raphson algorithm, which cycles through values that the parameters can take on and eventually converges to values that maximise the log-likelihood. At each step of the algorithm, the new proposed value for the likelihood is given by:
+
+\begin{equation}
+\beta_{new} = \beta_{old} - l''(\beta_{old})^{-1} l'(\beta_{old})
+\end{equation}
+
+where $\beta$ is the vector of item parameters, $l''(\beta)$ is the Hessian matrix, corresponding to the second derivative of the log-likelihood function, and $l'(\beta)$ is the gradient vector defined above. The only difficulty is then to find an analytic formula for the values in the Hessian matrix. This task is simplified again by noting that $\frac{\partial y_{x^+ p}}{\partial \beta_i} = -\exp(-\beta_i)y_{r-1}^{\setminus i}$ such that the diagonal values of the Hessian matrix, for which we differentiate again with respect to $\beta_i$, are given by:
+
+\begin{align}
+\frac{\partial^2 l}{\partial \beta_i^2} &= 0 + \frac{\partial l}{\partial \beta_i} \left( \exp(-\beta_i) y_{r-1}^{\setminus i} \right) \frac{1}{y_{x^+ p}} + \exp(-\beta_i) y_{r-1}^{\setminus i} \frac{\partial l}{\partial \beta_i} \left( \frac{1}{y_{x^+ p}} \right) \\[10pt]
+&= - \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} + \left( \frac{\exp(-\beta_i) y_{r-1}^{\setminus i}}{y_{x^+ p}} \right)^2
+\end{align}
+
+For the off-diagonal elements, a similar process is repeated but the resulting expression is different due to $y_{r-1}^{\setminus i}$ being dependent on $\beta_j$ where $j\neq i$:
+
+\begin{align}
+\frac{\partial^2 l}{\partial \beta_i \partial \beta_j} &= 0 + \frac{\partial l}{\partial \beta_j} \left( \exp(-\beta_i) y_{r-1}^{\setminus i} \right) \frac{1}{y_{x^+ p}} + \exp(-\beta_i) y_{r-1}^{\setminus i} \frac{\partial l}{\partial \beta_j} \left( \frac{1}{y_{x^+ p}} \right) \\[10pt]
+&= \frac{-\exp(-\beta_i) \exp(-\beta_j) y_{r-2}^{\setminus i,j}}{y_{x^+ p}} + \frac{\exp(-\beta_i) \exp(-\beta_j) y_{r-1}^{\setminus i}y_{r-1}^{\setminus j}}{y_{x^+ p}^2}
+\end{align}
+
+Given these analytically derived formulas for the gradient and the Hessian, the item parameters can be updated using the Newton-Raphson algorithm. Convergence of the algorithm can be defined after a set number of iterations or 
 
 ### Sum Algorithm for the Rasch Model
 
