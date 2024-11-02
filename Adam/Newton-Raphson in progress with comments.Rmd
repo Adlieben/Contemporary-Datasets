@@ -9,7 +9,7 @@ output:
 
 # Introduction and outline
 
-The aim of the project is to estimate the item parameters of a Rasch model without making assumptions concerning the person parameters. In order to achieve this, we first generate data for which the true item parameters are known then construct a function to re-estimate these parameters using a Newton-Raphson algorithm. Checks are performed along the way to ensure that the data generation is performed correctly and that the constructed algorithm produces stable estimates that correspond to the desired item parameters. These are compared to the original values and benchmarked against the values produced by the rasch() function in the ltm package to demonstrate that the algorithm is functioning properly. Finally, data is generated for varying number of items, number of respondents and methods of generation to investigate the function's overall performance. This is measured using mean averag error (MAE).
+The aim of the project is to estimate the item parameters of a Rasch model without making assumptions concerning the person parameters. In order to achieve this, we first generate data for which the true item parameters are known, then construct a function to re-estimate these parameters using a Newton-Raphson algorithm. Checks are performed along the way to ensure that the data generation is performed correctly and that the constructed algorithm produces stable estimates that correspond to the desired item parameters. These are compared to the original values and benchmarked against the values produced by the `rasch()` function in the `ltm` package to demonstrate that the algorithm is functioning properly. Finally, data is generated for varying number of items, number of respondents and methods of generation to investigate the function's overall performance. This is measured using mean average error (MAE).
 
 # Load Packages
 
@@ -30,21 +30,39 @@ library(reshape2) # For matrix operations
 For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. For the time being, we assume no missing data, signifying that only booklet is administered and that every person managed to complete every item.
 
 ```{r}
-generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
+generate_irt_data <- function(num_items = 3, num_persons = 1000,
+                              diff_dist = c("normal", "t", "uniform"), sd = NA, df = NA, min = NA, max = NA,
+                              seed = 124) {
   
   set.seed(seed) # Set seed for reproducibility
   
   # Step 1: Define Item Parameters
-  beta_true <- runif(num_items, -2, 2) # uniformly distributed item difficulties around 0 logits
+  
+  if (diff_dist == "normal" & is.na(sd)) {
+    stop("Please specify a standard deviation for the normal distribution.")
+  } else if (diff_dist == "t" & is.na(df)) {
+    stop("Please specify degrees of freedom for the t-distribution.")
+  } else if (diff_dist == "uniform" & (is.na(min) | is.na(max))) {
+    stop("Please specify a minimum and maximum value for the uniform distribution.")
+  } else if (diff_dist == "normal") {
+    beta_true <- rnorm(num_items, 0, sd) # normally distributed item difficulties around 0 logits
+  } else if (diff_dist == "t") {
+    beta_true <- rt(num_items, df) # t-distributed item difficulties
+  } else if (diff_dist == "uniform") {
+    beta_true <- runif(num_items, min, max) # uniformly distributed item difficulties
+  }  else {
+    stop("Invalid distribution specified. Please choose 'normal' (with specified sd) or 't' (with specified df).")
+  }
+  
   beta_true <- scale(beta_true, scale = FALSE) # Center the betas because they are relative
   
   # Step 2: Define Person Parameters with fixed mean and SD
-  person_ability <- rnorm(num_persons, mean = -1, sd = 1) # normally distributed person abilities
+  person_ability <- rnorm(num_persons, mean = 0, sd = 1) # normally distributed person abilities
   person_ability <- scale(person_ability, scale = FALSE) # Center the thetas because they are relative
   
   # Step 4: Simulate Responses
   # Create an empty response matrix to store responses for each person-item pair
-  response_matrix <- matrix(0, nrow = num_persons, ncol = num_items)
+  response_matrix <- matrix(NA, nrow = num_persons, ncol = num_items)
   
   for (i in 1:num_persons) {
     for (j in 1:num_items) {
@@ -71,8 +89,8 @@ generate_irt_data <- function(num_items = 3, num_persons = 1000, seed = 124) {
 ## Data Generation
 
 ```{r}
-# Generate example data with 5 items and 1000 persons
-result <- generate_irt_data(num_items = 5, num_persons = 1000)
+# Generate example data with 5 items and 1000 persons (standard normal distribution for item difficulties)
+result <- generate_irt_data(num_items = 5, num_persons = 1000, diff_dist = "normal", sd = 1)
 
 response_matrix <- result$response_matrix
 beta_true <- result$beta_true
@@ -112,7 +130,7 @@ for (i in 1:length(beta_true)) {
 print(p)
 ```
 
-Here, the item difficulty parameters are represented on the intersection of the x-axis with the vertical lines. It is clear that the probability of answering an item correctly is dictated by the item difficulty parameters so the data generation process has worked. 
+Here, the item difficulty parameters are represented on the intersection of the x-axis with the vertical lines. It is clear that the probability of answering an item correctly is dictated by the item difficulty parameters so the data generation process has worked. This can be confirmed by the fact that the logistic curves all predict a probability of 0.5 at the respective item difficulty parameter.
 
 # The Estimation
 
