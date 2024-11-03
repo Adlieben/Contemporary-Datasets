@@ -1,10 +1,13 @@
 ---
-title: "Rasch-model"
+title: "Assignment - computational IRT"
 author: "Adam Maghout, Jasmijn Bazen, Jonathan Koop and Merlin Urbanski"
-date: "2024-10-09"
 output:
-  html_document: default
-  pdf_document: default
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+    number_sections: true
+    theme: cosmo
 ---
 
 # Introduction and outline
@@ -12,6 +15,8 @@ output:
 The aim of the project is to estimate the item parameters of a Rasch model without making assumptions concerning the person parameters. In order to achieve this, we first generate data for which the true item parameters are known, then construct a function to re-estimate these parameters using a Newton-Raphson algorithm. Checks are performed along the way to ensure that the data generation is performed correctly and that the constructed algorithm produces stable estimates that correspond to the desired item parameters. These are compared to the original values and benchmarked against the values produced by the `rasch()` function in the `ltm` package to demonstrate that the algorithm is functioning properly. Finally, data is generated for varying number of items, number of respondents and methods of generation to investigate the function's overall performance. This is measured using mean average error (MAE).
 
 # Load Packages
+
+The packages loaded here are used for benchmarking and checking. The main function is built from scratch and uses only base R.
 
 ```{r, warning=FALSE, message=FALSE}
 library(ltm)   # For rasch() function
@@ -24,9 +29,9 @@ library(reshape2) # For matrix operations
 
 # Data 
 
-## Function for Generating Data
+## Generating the Data
 
-For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. For the time being, we assume no missing data, signifying that only one booklet is administered and that every person managed to complete every item.
+For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. We assume here no missing data, although the function we create later on will be able to handle missing data.
 
 ```{r}
 generate_irt_data <- function(num_items = 3, num_persons = 1000,
@@ -85,7 +90,7 @@ generate_irt_data <- function(num_items = 3, num_persons = 1000,
 }
 ```
 
-## Data Generation
+Now that the function is created, we can simply use it to create data. As a first example, we create a dataset with 5 items and 1000 persons.
 
 ```{r}
 # Generate example data with 5 items and 1000 persons (standard normal distribution for item difficulties)
@@ -151,7 +156,9 @@ P(x^+ = r | \theta, \beta) & = \sum_{x\rightarrow r} \prod_{i=1}^n \frac{\exp(x_
 \end{split}
 \end{equation}
 
-The last transformation reveals the utility of first finding an expression of the probability of a total score before computing the desired likelihood: we now have two parts, one that depends on the item difficulties, the other on person abilities. Since the person abilities are assumed in this problem to be unknown because we are simply observing a random sample, finding an expression of the likelihood of the item parameters that is independent of them is important. On the other hand, $r$ is known for our score pattern since it is just the sum of the $x_i$ (indeed this property is even used for one of the steps) so it will be more useful to work with. To evaluate $\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))$, we observe that it is equal to the likelihood of each final score $r$, that we can notate $y_r$. Furthermore, for each item $i$, given that $x_i$ can be either 0 or 1, we find that $y_r = \exp(-\beta_i * 0)y_r^{\setminus i} + \exp(-\beta_i * 1)y_{r-1}^{\setminus i} = y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}$, where $\setminus i$ indicates the observation $i$ is left out of the calculation. This is trivial as the sum $r$ can be reached both if item $i$ is answered correctly or not. Applying this rule recursively allows us to quickly obtain the likelihood of obtaining each sum $r$. This process will be refered to as the sum algorithm. 
+The last transformation reveals the utility of first finding an expression of the probability of a total score before computing the desired likelihood: we now have two parts, one that depends on the item difficulties, the other on person abilities. Since the person abilities are assumed in this problem to be unknown because we are simply observing a random sample, finding an expression of the likelihood of the item parameters that is independent of them is important. On the other hand, $r$ is known for our score pattern since it is just the sum of the $x_i$ so it will be more useful to work with.   
+
+To evaluate $\sum_{x\rightarrow r}\prod_{i=1}^n \exp(-\beta_ix_i))$, we observe that it is equal to the likelihood of each final score $r$, that we can notate $y_r$. Furthermore, for each item $i$, given that $x_i$ can be either 0 or 1, we find that $y_r = \exp(-\beta_i * 0)y_r^{\setminus i} + \exp(-\beta_i * 1)y_{r-1}^{\setminus i} = y_r^{\setminus i} + \exp(-\beta_i)y_{r-1}^{\setminus i}$, where $\setminus i$ indicates the observation $i$ is left out of the calculation. This is trivial as the sum $r$ can be reached both if item $i$ is answered correctly or not. Applying this rule recursively allows us to quickly obtain the likelihood of obtaining each sum $r$. This process will be refered to as the sum algorithm.   
 
 Once this has been established, it can be noted via conditional probability that:
 
@@ -211,9 +218,9 @@ For the off-diagonal elements, a similar process is repeated but the resulting e
 
 Given these analytically derived formulas for the gradient and the Hessian, the item parameters can be updated using the Newton-Raphson algorithm. Convergence of the algorithm can be defined after a set number of iterations or once the change in $\beta$ between one iteration and the next is beneath a specified threshold. Here, both approaches can be combined. Namely, if the change in $\beta$ is negligeable between two iterations, the algorithm will stop but will otherwise continue until it reaches a maximum number of iterations. Both the threshold and maximum number of iterations are arbitrary.
 
-### Sum Algorithm
+## Sum Algorithm
 
-The sum algorithm is defined recurrently:
+The sum algorithm is defined recursively:
 
 * **Initialise Matrix**
 * **Fill Matrix Using Recurrence Relation**
@@ -243,7 +250,7 @@ sum_algorithm_prob <- function(beta, score) {
 }
 ```
 
-### Gradient for the Rasch Model
+## Gradient for the Rasch Model
 
 The formulation of the gradient vector is given in section 4.0.1:
 
@@ -293,7 +300,7 @@ grad_rasch <- function(beta, response_matrix) {
   return(gradient)  # Return gradient vector
 }
 ```
-### Hessian for the Rasch Model
+## Hessian for the Rasch Model
 
 The formulation of the elements of the Hessian matrix is given in section 4.0.1. For the diagonal elements, these can be obtained with:
 
@@ -362,7 +369,7 @@ hessian_rasch <- function(beta, response_matrix) {
   return(hessian)  # Return the Hessian matrix
 }
 ```
-### Multivariate Newton-Raphson Algorithm for the Rasch Model
+## Multivariate Newton-Raphson Algorithm for the Rasch Model
 
 Given the previous functions for the sum algorithm, gradient vector and Hessian matrix, the Newton-Raphson Algorithm is defined as follows:
 
@@ -373,10 +380,10 @@ Given the previous functions for the sum algorithm, gradient vector and Hessian 
 * **Check for Convergence**
 * **Return Estimated Beta Values**
 
-The method for dealing with missing data can be specified in the model below. Three methods are offered:
+The method for dealing with missing data can be specified in the function below. Three methods are offered, unfortunately none of these deal with separate booklets properly but can be used for sparsely missing data:
 
 * **Complete cases**: Only rows in which there is no missing data are used to compute item difficulties. This could be beneficial in situations where the missingness mechanism is MAR or MCAR, for example when a teacher forgot to grade a question.
-* **Mean imputation**: Missing values are replaced by the most frequent score for the item, that is the rounded mean for bianry outcomes 0 and 1. This can be used in similar situations as for complete cases but allows the use of the rest of the respondent's grades. The drawback is that this will bias the difficulty parameter of the item where the missingness ocurred. This effect will be especially noticeable when there are many missing values.
+* **Mean imputation**: Missing values are replaced by the most frequent score for the item, that is the rounded mean for binary outcomes 0 and 1. This can be used in similar situations as for complete cases but allows the use of the rest of the respondent's grades. The drawback is that this will bias the difficulty parameter of the item where the missingness ocurred. This effect will be especially noticeable when there are many missing values.
 * **Replacement by zero**: Missing values are replaced by 0. If the missingess is known to be related to students not being able to or not wanting to answer an item, this is a valid approach.  
 
 ```{r}
@@ -446,7 +453,7 @@ multivariate_newton_raphson <- function(beta_init, # Initial guess for item para
 
 ## Application of the Newton-Raphson Algorithm
 
-### Choosing the Initial Values
+### Choice of Starting Values
 
 Initial values for the Newton-algorithm must be defined before using it on the data generated earlier. We generally considered two options for this:
 
@@ -492,28 +499,21 @@ kable(table_iterations,
       caption = "Number of iterations required for convergence with different starting values for item difficulties")
 ```
 
-As can be retrieved from the table above, the number of iterations required for convergence is generally lower when using log-odds as the initial values. This is consistent with the fact that the algorithm converges faster when starting from a more informed point. There is also a clear trend, revealing that the advantage of the log-odds approach increases as the standard deviation of the item difficulties increases. This is logical, as the log-odds approach provides a better starting point when the item difficulties are further from 0.
+As can be retrieved from the table above, the number of iterations required for convergence is generally lower when using log-odds as the initial values. This is consistent with the fact that the algorithm converges faster when starting from a more informed point. There is also a clear trend, revealing that the advantage of the log-odds approach increases as the standard deviation of the item difficulties increases. This is logical, as the log-odds approach provides a better starting point when the item difficulties are further from 0. We thus use the log-odds as starting values going forward, although a vector of 0s is also a reasonable vector of starting values for the item parameters. 
 
+### Running and checking the Newton-Raphson Algorithm
 
-### Running the Newton-Raphson Algorithm
-
-Below, we run the Newton-Raphson algorithm using the log-odds as the initial values and compare the estimated item difficulties to the true values.
+Below, we run the Newton-Raphson algorithm using the log-odds as the initial values and compare the estimated item difficulties to the true values. We use the same data as generated in section 3.1.
 
 ```{r}
-# Generate example data with 5 items and 1000 persons (normal distribution for item difficulties)
-result <- generate_irt_data(num_items = 5, num_persons = 1000, diff_dist = "normal", sd = 0.5)
-
-response_matrix <- result$response_matrix # Response matrix
-
 # Initial values for beta
 beta_init <- scale(-log(colMeans(response_matrix) / (1 - colMeans(response_matrix))), scale = FALSE)
 
 # Run the multivariate Newton-Raphson algorithm
 beta_output <- multivariate_newton_raphson(beta_init, response_matrix, save_iterations = TRUE)
 
-# Print the final estimated beta values
+# Store the final estimated beta values
 beta_estimated <- beta_output$beta
-print(beta_estimated)
 
 # Compare the estimated beta with the true beta
 comparison <- data.frame(
@@ -536,7 +536,7 @@ beta_estimates_ltm <- coef(rasch_model)
 beta_estimates_ltm
 ```
 
-Again, there is little difference between our estimated parameters via the rasch function and the true parameters. This also confirms that retrieving the original parameters perfectly is not possible given random variation in the response matrix. Finally, we can verify that the Newton-Raphson function is converging properly and that the values observed are not due to chance or convergence in a local maximum. This can be done easily as the function already stores the values of $\beta$ at each iteration:
+Again, there is little difference between our estimated parameters via the rasch function and the true parameters. This also confirms that retrieving the original parameters perfectly is not possible given random variation in the response matrix. Additionally, we can verify that the Newton-Raphson function is converging properly and that the values observed are not due to chance or convergence in a local maximum. This can be done easily as the function already stores the values of $\beta$ at each iteration:
 
 ```{r}
 # Since we already saved the beta history, we can plot it:
@@ -557,15 +557,49 @@ ggplot(beta_history_long, aes(x = Iteration, y = Beta, color = Item)) +
   theme_minimal()
 ```
 
-Convergence is clear as the algorithm quickly reaches item difficulties similar to those outputted as results by the function. This also suggests that a smaller tolerance level could be used in this instance, which can be fixed using the 'tol' parameter in the function.
+Convergence is clear as the algorithm quickly reaches item difficulties similar to those outputted as results by the function. This also suggests that a smaller tolerance level could be used in this instance, which can be fixed using the 'tol' parameter in the function. In addition to that, the plot also reveals the advantage of the log-odds approach, as the initial values chosen (see very left of the traces) are much closer to the estimates than the zero values.  
 
-In addition to that, the plot also reveals the advantage of the log-odds approach, as the initial values chosen (see very left of the traces) are much closer to the estimates than the zero values.
+Finally, we can verify that the handling on missingness is done correctly by randomly removing observations from the data and running the function again:
+
+```{r}
+# Define the number of observations to remove
+n_remove <- 20
+
+# Make a copy of the response matrix
+response_matrix_na <- response_matrix
+
+# Randomly select positions to set as NA
+set.seed(42)
+na_indices <- matrix(
+  c(sample(1:nrow(response_matrix_na), n_remove, replace = TRUE),
+    sample(1:ncol(response_matrix_na), n_remove, replace = TRUE)),
+  ncol = 2
+)
+
+# Assign NA to the selected positions
+for (i in 1:n_remove) {
+  response_matrix_na[na_indices[i, 1], na_indices[i, 2]] <- NA
+}
+
+# Initial values for beta
+beta_init <- scale(-log(colMeans(response_matrix_na, na.rm = TRUE) / 
+                        (1 - colMeans(response_matrix_na, na.rm = TRUE))), scale = FALSE)
+
+# Run the multivariate Newton-Raphson algorithm with the modified response matrix
+beta_output <- multivariate_newton_raphson(beta_init, response_matrix_na, save_iterations = TRUE)
+
+# Print the final estimated beta values
+beta_estimated <- beta_output$beta
+print(as.vector(beta_estimated))
+```
+
+The parameters are now different because certain observations have been randomly excluded nevertheless, the function was able to handle missing data and return sensible parameter estimates as desired.
 
 # Evaluation of the Function's Correctness
 
-In order to evaluate, whether the function correctly estimates the item parameters, we can compare the estimated item parameters with the true item parameters in various scenarios, letting the number of items and persons, as well as the item difficulties and their distribution vary. The following table presents the conditions under which the functions were evaluated:
-
-```{r}
+In order to evaluate whether the function correctly estimates the item parameters, we can compare the estimated item parameters with the true item parameters in various scenarios, letting the number of items and persons, as well as the item difficulties and their distribution, vary. The following table presents the conditions under which the functions were evaluated:
+  
+  ```{r, echo=FALSE}
 table <- data.frame(matrix(ncol = 1, nrow = 3))
 
 rownames(table) <- c("Number of Persons", "Number of Items", "Standard Deviation of Parameters")
@@ -578,7 +612,7 @@ kable(table, col.names = "Conditions", caption = "Conditions for the evaluation 
   kable_styling(full_width = F)
 ```
 
-Given that there are three different conditions with three different scenarios each, we can evaluate the functions correctness in a total of 27 scenarios. Below these scenarios are presented:
+The function's correctness is thus evaluated in a total of 27 scenarios. Below these scenarios are presented:
 
 ```{r simulation, warning=F, message=F}
 person_conditions <- c(100, 1000, 10000)
@@ -619,7 +653,7 @@ for (i in seq_along(person_conditions)) {
 }
 ```
 
-The Mean Absolute Error (MAE) between the true and estimated item parameters for each scenario is presented dividing the scenarios into three tables, one for each item difficulty distribution:
+The Mean Absolute Error (MAE) between the true and estimated item parameters for each scenario is presented dividing the scenarios into three tables, one for each item difficulty distribution. The MAEs for the custom function derived above can be compared to those obtained with the rasch() function:
 
 ```{r sim results}
 for (i in seq_along(difficulty_sds)) {
@@ -671,6 +705,8 @@ for (i in seq_along(difficulty_sds)) {
 }
 ```
 
-As can be seen in the plots, both the implemented and the `ltm` functions perform similarly in estimating the item parameters. The Mean Absolute Error (MAE) between the true and estimated item parameters is generally low with a sufficient number of observations/person. In the cases of 1000 and 10000 persons, the MAEs are generally around 0.05 implying that the estimates on average only deviate by 0.05 from the true values. This indicates that the implemented functions are quite reliable for estimating item parameters in the Rasch model given exponentially or normally distributed parameters.
-In the case of fewer observations (i.e., n=100), the MAEs are generally higher, indicating that the estimates are less reliable. In these cases, the custom function surprisingly performs better than the `ltm` function, as the MAEs are generally lower. This is particularly evident for the scenario with a standard deviation of 1, where the MAEs of `ltm`'s function range up to 0.332, while the custom function's MAEs are below 0.22. This suggests that the custom function is more reliable for estimating item parameters in the Rasch model given normally distributed parameters with fewer observations.
+As can be seen in the plots, both the implemented and the `ltm` functions perform similarly in estimating the item parameters. The Mean Absolute Error (MAE) between the true and estimated item parameters is generally low with a sufficient number of observations/person. In the cases of 1000 and 10000 persons, the MAEs are generally around 0.05 implying that the estimates on average only deviate by 0.05 from the true values. This indicates that the implemented function is reliable for estimating item parameters in the Rasch model.  
+
+In the case of fewer observations (i.e., n=100), the MAEs are generally higher, indicating that the estimates are less reliable. In these cases, the custom function surprisingly performs better than the `ltm` function, as the MAEs are generally lower. This is particularly evident for the scenario with a standard deviation of 1, where the MAEs of `ltm`'s function range up to 0.332, while the custom function's MAEs are below 0.22. This suggests that the custom function is more reliable for estimating item parameters in the Rasch model with fewer observations. This could be due to differences in how the likelihood is computed in the rasch() model (see section 4.5.2), or due to the choice of starting values (the ltm function uses 0s as starting values). It can nonetheless be noted that the rasch() function is significantly faster, indicating the function proposed here could still be optimised.
+
 
