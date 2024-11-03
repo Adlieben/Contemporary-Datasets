@@ -27,7 +27,7 @@ library(reshape2) # For matrix operations
 
 ## Function for Generating Data
 
-For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. For the time being, we assume no missing data, signifying that only booklet is administered and that every person managed to complete every item.
+For the data we generate, we assume there are true values for person and item location parameters. These will be useful to compare to the output of our item parameter retrieval algorithm later on. Both sets of parameters are scaled beforehand to reflect the relativety of location parameters during estimation. For the time being, we assume no missing data, signifying that only one booklet is administered and that every person managed to complete every item.
 
 ```{r}
 generate_irt_data <- function(num_items = 3, num_persons = 1000,
@@ -142,7 +142,7 @@ The probability of observing a pattern $x$ of $n$ responses for a person $p$ und
 P(X = x | \theta_p, \beta_i) = \prod_{i=1}^n \frac{\exp(x_i (\theta_p - \beta_i))}{1 + \exp(\theta_p - \beta_i)}
 \end{equation}
 
-Where $\theta_p$ is the ability of the person and $\beta_i$ is the difficulty of the item $i$ with $i$ ranging from 1 to n. Here, we are interested in estimating the item locatio parameters $\beta_i$. Given an observed score pattern $x$, this entails finding values for the item parameters that are most likely to have produced the pattern. In other words, we want to maximise the likelihood of the $\beta_i$ given $x$. To this goal, we transform equation (1) to represent the probability of a total score $x^+$ being equal to a value $r$. This is simply the sum of all possible combinations of $x_i$ that lead to $x^+=r$, that is:
+Where $\theta_p$ is the ability of the person and $\beta_i$ is the difficulty of the item $i$ with $i$ ranging from 1 to n. Here, we are interested in estimating the item location parameters $\beta_i$. Given an observed score pattern $x$, this entails finding values for the item parameters that are most likely to have produced the pattern. In other words, we want to maximise the likelihood of the $\beta_i$ given $x$. To this goal, we transform equation (1) to represent the probability of a total score $x^+$ being equal to a value $r$. This is simply the sum of all possible combinations of $x_i$ that lead to $x^+=r$, that is:
 
 \begin{equation}
 \begin{split}
@@ -418,7 +418,61 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
 
 ## Application of the Newton-Raphson Algorithm
 
-Initial values for the Newton-algorithm must be defined before using it on the data generated earlier. We choose a vector of zeroes so as to obtain difficulties centered around 0. This is consistent with the data generation process, during which the item difficulties were first centered. An equivalent alternative would be to choose different starting values then center the estimated item difficulties once the algorithm has converged.
+### Choosing the Initial Values
+
+Initial values for the Newton-algorithm must be defined before using it on the data generated earlier. We generally considered two options for this:
+
+1. **Vector of Zeroes**: Given that the item difficulties were centered around 0, a vector of zeroes could be used as the starting point. This is consistent with the data generation process, during which the item difficulties were first centered. However, it may take longer to converge, as the algorithm would need to adjust the values without incorporating any prior knowledge.
+
+2. **Vector With Log-Odds**: Alternatively, a vector of log-odds could be used as the starting point. Specifically, these log-odds would be calculated as $log(\frac{P(X_i=1)}{1-P(X_i=1)})$, where $P(X_i=1)$ is the proportion of correct responses for item $i$. This would provide a more informed starting point for the algorithm, as it would already be close to the true item difficulties.
+
+In order to compare the two methods, we can check how fast the algorithm converges for each starting point, given different parameter sizes. This can be done by running the algorithm for both starting points and comparing the number of iterations required for convergence. Below, we run the algorithm for both starting points and compare the results in convergence plots.
+
+```{r}
+table_iterations <- data.frame(sd = numeric(0), 
+                               iterations_zero = numeric(0), 
+                               iterations_logodds = numeric(0),
+                               mae_zero = numeric(0),
+                               mae_logodds = numeric(0))
+
+sd <- seq(0.05, 2, length.out = 10)
+
+for (i in seq_along(sd)) {
+  # Generate example data with 5 items and 1000 persons (normal distribution for item difficulties)
+  result <- generate_irt_data(num_items = 5, num_persons = 1000, diff_dist = "normal", sd = sd[i])
+  
+  # save sd in table
+  table_iterations[i,1] <- sd[i]
+  
+  response_matrix <- result$response_matrix
+  
+  # Initial value for beta
+  beta_init_zero <- rep(0, ncol(response_matrix))
+  beta_init_logodds <- -log(colMeans(response_matrix) / (1 - colMeans(response_matrix)))
+  
+  # Run the multivariate Newton-Raphson algorithm with zero initial values
+  results_zero <- multivariate_newton_raphson(beta_init_zero, response_matrix, save_iterations = TRUE)
+  table_iterations[i,2] <- nrow(results_zero$beta_history) # record the number of iterations
+  table_iterations[i,4] <- mean(abs(results_zero$beta - result$beta_true)) # record the mean absolute error
+  
+  # Run the multivariate Newton-Raphson algorithm with log-odds initial values
+  results_logodds <- multivariate_newton_raphson(beta_init_logodds, response_matrix, save_iterations = TRUE)
+  table_iterations[i,3] <- nrow(results_logodds$beta_history) # record the number of iterations
+  table_iterations[i,5] <- mean(abs(results_logodds$beta - result$beta_true)) # record the mean absolute error
+  
+  
+}
+
+round(table_iterations, 2)
+# turn table into nice kable
+kable(table_iterations, caption = "Number of iterations required for convergence with different starting values for item difficulties")
+```
+
+As can be retrieved from the table above, the number of iterations required for convergence is generally lower when using log-odds as the initial values. This is consistent with the fact that the algorithm converges faster when starting from a more informed point. The mean absolute error, however, is lower when starting from zero for small standard deviations. This is likely due to the XXXXXXX. For larger standard deviations, the log-odds starting values are more beneficial as they provide a better initial estimate of the item difficulties.
+
+
+### Running the Newton-Raphson Algorithm
+ADD DESCRIPTION
 
 ```{r}
 # Initial guess for beta
