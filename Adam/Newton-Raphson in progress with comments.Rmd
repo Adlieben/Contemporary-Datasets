@@ -366,22 +366,51 @@ hessian_rasch <- function(beta, response_matrix) {
 
 Given the previous functions for the sum algorithm, gradient vector and Hessian matrix, the Newton-Raphson Algorithm is defined as follows:
 
-* **Define Inputs**
+* **Deal with missing data**
 * **Initialise Variables**
 * **Calculate Gradient and Hessian**
 * **Update Beta**
 * **Check for Convergence**
 * **Return Estimated Beta Values**
 
+The method for dealing with missing data can be specified in the model below. Three methods are offered:
+
+* **Complete cases**: Only rows in which there is no missing data are used to compute item difficulties. This could be beneficial in situations where the missingness mechanism is MAR or MCAR, for example when a teacher forgot to grade a question.
+* **Mean imputation**: Missing values are replaced by the most frequent score for the item, that is the rounded mean for bianry outcomes 0 and 1. This can be used in similar situations as for complete cases but allows the use of the rest of the respondent's grades. The drawback is that this will bias the difficulty parameter of the item where the missingness ocurred. This effect will be especially noticeable when there are many missing values.
+* **Replacement by zero**: Missing values are replaced by 0. If the missingess is known to be related to students not being able to or not wanting to answer an item, this is a valid approach.  
+
 ```{r}
 # Multivariate Newton-Raphson implementation
-multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, max_iter = 1000, save_iterations = FALSE) {
+multivariate_newton_raphson <- function(beta_init, # Initial guess for item parameters
+                                        response_matrix, # Response matrix for which parameters are to be estimated
+                                        tol = 1e-6, # Threshold after which convergence is reached
+                                        max_iter = 1000, # Maximum number of iterations if convergence isn't reached before
+                                        NA_method = 'complete', 
+                                        # Method for dealing with missing data, by default use complete cases
+                                        save_iterations = FALSE # Option to save parameters at each iteration
+                                        ) {
+  # Check if NA_method is correctly specified
+  if (!NA_method %in% c("complete", "mean.imp", "zero")) {
+    stop("Invalid NA_method specified. Choose from 'complete', 'mean.imp', or 'zero'.")
+  }
+  
+  # Handle missing data based on specified NA_method
+  if (NA_method == "complete") {
+    response_matrix <- response_matrix[complete.cases(response_matrix), ]
+  } else if (NA_method == "mean.imp") {
+    response_matrix <- apply(response_matrix, 2, function(column) {
+      ifelse(is.na(column), mean(column, na.rm = TRUE), column)
+    })
+  } else if (NA_method == "zero") {
+    response_matrix[is.na(response_matrix)] <- 0
+  }
+  
   beta <- beta_init
   J <- length(beta_init)  # Number of items
   beta_history <- matrix(NA, nrow = max_iter, ncol = J)  # Matrix to store beta values per iteration
   
   for (iter in 1:max_iter) {
-    print(iter)  # Track iteration progress
+    # print(iter)  # Track iteration progress (can be turned on optionally)
     
     # Calculate gradient and Hessian
     gradient <- grad_rasch(beta, response_matrix)
@@ -389,7 +418,7 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
     
     # Update beta: beta_new = beta - H_inv * gradient
     beta_new <- beta - solve(hessian) %*% gradient
-    print(max(abs(beta_new - beta)))  # Display max change in beta for convergence check
+    # print(max(abs(beta_new - beta)))  # Display max change in beta for convergence check (also optional)
     
     # Save current beta values if required
     if (save_iterations) {
@@ -398,7 +427,7 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
     
     # Check for convergence
     if (max(abs(beta_new - beta)) < tol) {
-      cat("Converged after", iter, "iterations\n")
+      # cat("Converged after", iter, "iterations\n") # Can be used for tracking
       # Trim beta_history to actual iterations if saving
       if (save_iterations) {
         beta_history <- beta_history[1:iter, ]
@@ -410,7 +439,7 @@ multivariate_newton_raphson <- function(beta_init, response_matrix, tol = 1e-6, 
     beta <- beta_new
   }
   
-  cat("Did not converge within the maximum number of iterations\n")
+  # cat("Did not converge within the maximum number of iterations\n") # Can be used for tracking
   return(list(beta = beta, beta_history = beta_history))
 }
 ```
@@ -551,7 +580,7 @@ kable(table, col.names = "Conditions", caption = "Conditions for the evaluation 
 
 Given that there are three different conditions with three different scenarios each, we can evaluate the functions correctness in a total of 27 scenarios. Below these scenarios are presented:
 
-```{r}
+```{r simulation, warning=F, message=F}
 person_conditions <- c(100, 1000, 10000)
 item_conditions <- c(3, 5, 10)
 difficulty_sds <- c(0.1, 0.5, 1)
@@ -566,7 +595,7 @@ dimnames(MAE_array_ltm) <- list(person_conditions, item_conditions, difficulty_s
 for (i in seq_along(person_conditions)) {
   for (j in seq_along(item_conditions)) {
     for (k in seq_along(difficulty_sds)) {
-      print(paste("Scenario:", i, j, k))
+      # print(paste("Scenario:", i, j, k)) # Can be used for tracking
       
       #### Simulate Responses and Estimate Item Parameters for Each Scenario ####
       result <- generate_irt_data(num_items = item_conditions[j], num_persons = person_conditions[i], diff_dist = "normal", sd = difficulty_sds[k])
@@ -592,7 +621,7 @@ for (i in seq_along(person_conditions)) {
 
 The Mean Absolute Error (MAE) between the true and estimated item parameters for each scenario is presented dividing the scenarios into three tables, one for each item difficulty distribution:
 
-```{r}
+```{r sim results}
 for (i in seq_along(difficulty_sds)) {
   # Convert matrix to data frame and add row and column names
   df <- as.data.frame(MAE_array_custom[,,i])
