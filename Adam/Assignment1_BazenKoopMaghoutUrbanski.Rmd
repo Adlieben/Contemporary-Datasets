@@ -1,5 +1,5 @@
 ---
-title: "Assignment - computational IRT"
+title: "Assignment 1: Computational IRT"
 author: "Adam Maghout, Jasmijn Bazen, Jonathan Koop and Merlin Urbanski"
 output:
   html_document:
@@ -599,7 +599,7 @@ The parameters are now different because certain observations have been randomly
 
 In order to evaluate whether the function correctly estimates the item parameters, we can compare the estimated item parameters with the true item parameters in various scenarios, letting the number of items and persons, as well as the item difficulties and their distribution, vary. The following table presents the conditions under which the functions were evaluated:
   
-  ```{r, echo=FALSE}
+```{r, echo=FALSE}
 table <- data.frame(matrix(ncol = 1, nrow = 3))
 
 rownames(table) <- c("Number of Persons", "Number of Items", "Standard Deviation of Parameters")
